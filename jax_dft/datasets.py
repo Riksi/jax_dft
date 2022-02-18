@@ -1,0 +1,120 @@
+import os
+from absl import logging
+import numpy as np
+
+from jax_dft import scf
+
+
+class Dataset(object):
+    def __init__(self, path=None, data=None, num_grids=None, name=None):
+        if data is None and path is None:
+            raise ValueError("path and data cannot both be None.")
+        self.name = name
+        if data is None and path is not None:
+            data = self._load_from_path(path)
+        for name, array in data.items():
+            setattr(self, name, array)
+        self._set_num_grids(num_grids)
+        self.total_num_samples = self.distances.shape[0]
+
+    def _load_from_path(self, path):
+        file_open = open
+        data = {}
+        with file_open(os.path.join(path, 'num_electrons.npy'), 'rb') as f:
+            # make sure this is a scalar not an array
+            data['num_electrons'] = int(np.load(f))
+        with file_open(os.path.join(path, 'grids.npy'), 'rb') as f:
+            data['grids'] = np.load(f)
+        with file_open(os.path.join(path, 'locations.npy'), 'rb') as f:
+            data['locations'] = np.load(f)
+        with file_open(os.path.join(path, 'nuclear_charges.npy'), 'rb') as f:
+            data['nuclear_charges'] = np.load(f)
+        with file_open(os.path.join(path, 'distances_x100.npy'), 'rb') as f:
+            data['distances_x100'] = np.load(f).astype(int)
+        with file_open(os.path.join(path, 'distances.npy'), 'rb') as f:
+            data['distances'] = np.load(f)
+        with file_open(os.path.join(path, 'total_energies.npy'), 'rb') as f:
+            data['total_energies'] = np.load(f)
+        with file_open(os.path.join(path, 'densities.npy'), 'rb') as f:
+            data['densities'] = np.load(f)
+        with file_open(os.path.join(path, 'external_potentials.npy'), 'rb') as f:
+            data['external_potentials'] = np.load(f)
+
+    def _set_num_grids(self, num_grids):
+        original_num_grids = getattr(self, 'num_grids', None)
+        if original_num_grids is None:
+            self.num_grids = num_grids
+            logging.info(f"This dataset has {num_grids} grids")
+        else:
+            if num_grids > original_num_grids:
+                raise ValueError(f"num_grids {num_grids} cannot be greater "
+                                 f"than original number {original_num_grids}")
+            self.num_grids = num_grids
+            diff = original_num_grids - num_grids
+            if (num_grids % 2) == 0:
+                left_grids_removed = (diff - 1) // 2
+                right_grids_removed = (diff + 1) // 2
+            else:
+                left_grids_removed = diff // 2
+                right_grids_removed = diff // 2
+
+            self.grids = self.grids[:, left_grids_removed: original_num_grids - right_grids_removed]
+            self.densities = self.densities[:, left_grids_removed: original_num_grids-right_grids_removed]
+            self.locations = self.external_potentials[
+                             :, left_grids_removed: original_num_grids - right_grids_removed]
+            logging.info(
+                f"The original number of grids {original_num_grids} "
+                f"are trimmed into {self.num_grids} grids"
+            )
+
+    def get_mask(self, selected_distance_x100):
+        """Get mask for distance_x100"""
+        if selected_distance_x100 is None:
+            mask = np.ones(len(self.distances_x100))
+        else:
+            selected_distance_x100 = set(selected_distance_x100)
+            mask = np.array([distance in self.distances_x100
+                    for distance in selected_distance_x100])
+            if len(selected_distance_x100) != np.sum(mask):
+                raise ValueError("selected_distances_x100 contains distance "
+                                 "that is not in the dataset")
+        return mask
+
+    def get_test_mask(self):
+        """Gets mask for test set"""
+        return self.get_mask(_TEST_DISTANCE_X100[self.name])
+
+    def get_subdataset(self, selected_distance_x100=None, downsample_step=None):
+        mask = self.get_mask(selected_distance_x100)
+        if downsample_step is not None:
+            sample_mask = np.zeros(self.total_num_samples, dtype=bool)
+            sample_mask[::downsample_step] = True
+            mask = np.logical_and(mask, sample_mask)
+        return Dataset(
+            data=dict(
+                    num_electrons=self.num_electrons,
+                    grids=self.grids,
+                    locations=self.locations[mask],
+                    nuclear_charges=self.nuclear_charges[mask],
+                    distances_x100=self.distances_x100[mask],
+                    distances=self.distances[mask],
+                    total_energies=self.total_energies[mask],
+                    densities=self.densities[mask],
+                    external_potentials=self.external_potentials[mask]
+            )
+        )
+
+    def get_molecules(self, selected_distance_x100=None):
+        mask = self.get_mask(selected_distance_x100)
+        num_samples = np.sum(mask)
+
+        return scf.KohnShamState(
+            density=self.densities[mask],
+            total_energy=self.total_energies[mask],
+            locations=self.locations[mask],
+            nuclear_charges=self.nuclear_charges[mask],
+            external_potentials=self.external_potentials[mask],
+            grids=np.tile(np.expand_dims(self.grids, axis=0), reps=(num_samples, 1)),
+            num_electrons=np.repeat(self.num_electrons, repeats=num_samples),
+            converged=np.repeat(True, repeats=num_samples)
+        )

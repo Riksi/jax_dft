@@ -1,0 +1,1 @@
+A copy of the codebase ]JAX-DFT](https://github.com/google-research/google-research/tree/master/jax_dft) from Google Research with my annotations.
