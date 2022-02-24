@@ -10,6 +10,13 @@ from jax.scipy import ndimage
 from jax_dft import scf
 from jax_dft import utils
 
+_STAX_ACTIVATION = {
+    'relu': stax.Relu,
+    'elu': stax.Elu,
+    'softplus': stax.Softplus,
+    'swish': stax.elementwise(nn.swish)
+}
+
 
 def negativity_transform():
     """Layer construction for negativity transform
@@ -47,7 +54,6 @@ def _exponential_function_channels(displacements, widths):
     return jax.vmap(_exponential_function,
                     in_axes=(None, 0),
                     out_axes=2)(displacements, widths)
-
 
 def exponential_global_convolution(
     num_channels,
@@ -176,6 +182,14 @@ def self_interaction_weight(reshaped_density, dx, width):
     Returns:
 
     """
+    # Does this approximates i.e. \int \sum_i |\phi_i|^2 dz
+    # (where i includes spin as well as position)?
+    # But what is the meaning of that since
+    # this would be approximately the number of electrons?
+    # The tests include the possibility that reshaped_density
+    # sums to a fractional value as well as integer values.
+    # The tests seem to assume that the shape of the
+    # input will be [-1, N, 1].
     density_integral = jnp.sum(reshaped_density) * dx
     return jnp.exp(-jnp.square((density_integral - 1) / width))
 
@@ -195,10 +209,10 @@ def self_interaction_layer(grids, interaction_fn):
     def init_fn(rng, input_shape):
         if len(input_shape) != 2:
             raise ValueError(f"self_interaction_layer must have two inputs"
-                             f"but got {len(input_shape)}")
+                             f" but got {len(input_shape)}")
         if input_shape[0] != input_shape[1]:
             raise ValueError(f"The input self_interaction_layer must consist of two identical shapes"
-                             f"but got {input_shape[0]} and {input_shape[1]}")
+                             f" but got {input_shape[0]} and {input_shape[1]}")
 
         return input_shape[0], (jnp.array(1.),)
 
@@ -206,13 +220,14 @@ def self_interaction_layer(grids, interaction_fn):
         (width,) = params
         reshaped_density, features = inputs
         beta = self_interaction_weight(
-            reshaped_density=reshaped_density.reshape(-1),
+            reshaped_density=reshaped_density,
             dx=dx,
             width=width
         )
-        hartree = scf.get_hartree_potential(
-            reshaped_density, grids, interaction_fn
-        ).reshape(reshaped_density.shape)
+        hartree = -0.5 * scf.get_hartree_potential(
+            # [B, G, ...] -> [B * G * ...]
+            reshaped_density.reshape(-1), grids, interaction_fn
+        ).reshape(reshaped_density.shape)  # [B * G * ...] -> [B, G, ...]
         return hartree * beta + features * (1 - beta)
 
     return init_fn, apply_fn
@@ -249,7 +264,7 @@ def GeneralConvWithoutBias(
         output_shape = lax.conv_general_shape_tuple(
             input_shape, kernel_shape, strides, padding, dimension_numbers
         )
-        W = W_init(rng, input_shape)
+        W = W_init(rng, kernel_shape)
         return output_shape, (W,)
 
     def apply_fun(params, inputs, **kwargs):
@@ -263,8 +278,7 @@ def GeneralConvWithoutBias(
 
 
 Conv1D = functools.partial(
-    GeneralConvWithoutBias,
-    dimension_numbers=('NHC', 'HIO', 'NHC')
+    GeneralConvWithoutBias, ('NHC', 'HIO', 'NHC')
 )
 
 
@@ -272,6 +286,16 @@ def _resample_1d(inputs, new_size):
     if inputs.ndim != 1:
         raise ValueError(f'inputs must be 1d but has shape {inputs.shape}')
     x = jnp.linspace(0, inputs.size - 1, num=new_size)
+    # N = new_size
+    # s = (inputs.size - 1) / (N - 1)
+    # x = [0, s, 2*s, ..., (N - 1)*s] = [0, s, 2*s, ..., inputs.size - 1]
+    # The following samples by linearly interpolating x[i]
+    # between input[floor(x[i])] and input[ceil(x[i])]
+    # where 0 <= floor(x[i]) <= ceil(x[i]) <= inputs.size - 1
+    # so they are valid indices into inputs
+
+    # outputs[i] = inputs[floor(x[i])] + (inputs[ceil(x[i])] - inputs[floor(x[i])]) * (x[i] - floor(x[i]))
+
     return ndimage.map_coordinates(
         inputs, [x], order=1, mode='nearest'
     )
@@ -319,15 +343,15 @@ def linear_interpolation_transpose():
 
     def init_fn(rng, input_shape):
         del rng
-        if (input_shape[1] % 0) == 0:
+        if (input_shape[1] % 2) == 0:
             raise ValueError(f'input_shape[1] must be an odd number, got {input_shape[1]}')
-        m = (2 * input_shape[1] + 1) // 2
+        m = (input_shape[1] + 1) // 2
         output_shape = (input_shape[0], m, input_shape[2])
         return output_shape, ()
 
     def apply_fn(params, inputs, **kwargs):
         del params, kwargs
-        m = (2 * inputs.shape[1] + 1)//2
+        m = (inputs.shape[1] + 1)//2
         upsample = functools.partial(
             _resample_1d, new_size=inputs.shape[1]
         )
@@ -335,13 +359,41 @@ def linear_interpolation_transpose():
         _, vjp_fn = jax.vjp(upsample, dummy)
 
         def downsample(x):
+            # Since the output elements of `linear_interpolate`
+            # are just linear combination
+            # of input elements, the loss gradient with respect to
+            # input[i] is just the weighted sum of the output gradients
+            # to which input[i] contributes which are
+            #   output[2*i] with weight of 1
+            #   output[2*i - 1] with weight of 0.5, i > 0
+            #   output[2*i + 1] with weight of 0.5, i < (len(input) - 1)
+
+            # I think that x contains the downstream gradients
+            # with respect to the outputs i.e. x[i] = dL/d(out[i])
+
+            # Letting f = vjp_fn(x) the gradients are as follows
+            #   Non-edge i.e. 0 < i < (len(f) - 1)
+            #       f[i] = x[i] + (x[i - 1] + x[i + 1]) / 2
+            #   Edge
+            #       i = 0: f[i] = x[i] + x[i + 1] / 2
+            #       i = (len(f) - 1): f[i] = x[i] + x[i - 1] / 2
+
+            # A non-edge element i gets a full contribution from x[i] and
+            # half a contribution from each of x[i - 1] and x[i + 1]
+            # so from 2 elements in total so maybe you say that since this
+            # scales as 2 x a single activation you need to scale it by 0.5
+
+            # Originally the edge elements only get contributions
+            # from 1.5 elements, or after the scaling step 0.75 elements
+            # so you add a 0.25 of the edge gradient to make that up to 1.
+
             output = 0.5 * vjp_fn(x)[0]
-            output = output.at[1:].add(0.25 * output[1:])
-            output = output.at[-1:].add(0.25 * output[-1:])
+            output = output.at[:1].add(0.25 * x[:1])
+            output = output.at[-1:].add(0.25 * x[-1:])
             return output
 
         return jax.vmap(jax.vmap(
-                downsample(inputs), 0, 0
+                downsample, 0, 0
             ), 2, 2)(inputs)
 
     return init_fn, apply_fn
@@ -474,8 +526,12 @@ def build_sliding_net(
     window_size,
     num_filters_list,
     activation,
-    apply_negativity_transform
+    apply_negativity_transform=True
 ):
+
+    if window_size < 1:
+        raise ValueError(f'window size cannot be less than 1 but got {window_size}')
+
     layers = []
     for i, num_filters in enumerate(num_filters_list):
         if i == 0:

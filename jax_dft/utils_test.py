@@ -371,5 +371,18 @@ class UtilsTest(parameterized.TestCase):
             )
         )
 
+    def test_compute_distances_between_nuclei(self):
+        np.testing.assert_allclose(
+            utils.compute_distances_between_nuclei(
+                locations=np.array([
+                    [-1., 1., 3.5, 5.],
+                    [-4., 0., 3.5, 10.],
+                    [-2., -1., 3.5, 55.],
+                ]),
+                nuclei_indices=(1, 2)
+            )
+            [[2.5, 3.5, 4.5]]
+        )
+
 
 

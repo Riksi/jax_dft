@@ -1,6 +1,6 @@
 data
 .ipynb_checkpoints
 .idea
-__pycache__
+__pycache__/
+
 scratch*
-*pyc*

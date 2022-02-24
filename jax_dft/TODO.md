@@ -57,22 +57,22 @@
 - [x] test_exponential_function_normalization
 - [x] test_exponential_function_channels
 - [x] test_exponential_global_convolution
-- [ ] test_self_interaction_weight
-- [ ] test_self_interaction_layer_one_electron
-- [ ] test_self_interaction_layer_large_num_electrons
-- [ ] test_wrap_network_with_self_interaction_layer_one_electron
-- [ ] test_wrap_network_with_self_interaction_layer_large_num_electrons
-- [ ] test_downsampling_block
-- [ ] test_linear_interpolation
-- [ ] test_linear_interpolation_transpose
-- [ ] test_upsampling_block
-- [ ] test_build_unet
-- [ ] test_build_sliding_net
-- [ ] test_build_sliding_net_invalid_window_size
+- [x] test_self_interaction_weight
+- [x] test_self_interaction_layer_one_electron
+- [x] test_self_interaction_layer_large_num_electrons
+- [x] test_wrap_network_with_self_interaction_layer_one_electron
+- [x] test_wrap_network_with_self_interaction_layer_large_num_electrons
+- [x] test_downsampling_block
+- [x] test_linear_interpolation
+- [x] test_linear_interpolation_transpose
+- [x] test_upsampling_block
+- [x] test_build_unet
+- [x] test_build_sliding_net
+- [x] test_build_sliding_net_invalid_window_size
 - [ ] test_local_density_approximation
 - [ ] test_local_density_approximation_wrong_output_shape
-- [ ] test_spatial_shift_input
-- [ ] test_reverse_spatial_shift_output
+- [x] test_spatial_shift_input
+- [x] test_reverse_spatial_shift_output
 - [x] test_is_power_of_two_true
 - [x] test_is_power_of_two_false
 - [ ] test_global_functional_with_unet
