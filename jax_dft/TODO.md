@@ -69,18 +69,18 @@
 - [x] test_build_unet
 - [x] test_build_sliding_net
 - [x] test_build_sliding_net_invalid_window_size
-- [ ] test_local_density_approximation
-- [ ] test_local_density_approximation_wrong_output_shape
+- [x] test_local_density_approximation
+- [x] test_local_density_approximation_wrong_output_shape
 - [x] test_spatial_shift_input
 - [x] test_reverse_spatial_shift_output
 - [x] test_is_power_of_two_true
 - [x] test_is_power_of_two_false
-- [ ] test_global_functional_with_unet
-- [ ] test_global_functional_with_sliding_net
-- [ ] test_global_functional_wrong_num_spatial_shift
-- [ ] test_global_functional_wrong_num_grids
-- [ ] test_global_functional_with_unet_wrong_output_shape
-- [ ] test_global_functional_with_sliding_net_wrong_output_shape
+- [x] test_global_functional_with_unet
+- [x] test_global_functional_with_sliding_net
+- [x] test_global_functional_wrong_num_spatial_shift
+- [x] test_global_functional_wrong_num_grids
+- [x] test_global_functional_with_unet_wrong_output_shape
+- [x] test_global_functional_with_sliding_net_wrong_output_shape
 
 ## `np_utils`
 - [ ] test_flatten

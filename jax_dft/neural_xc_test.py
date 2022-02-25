@@ -334,19 +334,45 @@ class NetworkTest(parameterized.TestCase):
             )
 
 
+class LDAFunctionalTest(parameterized.TestCase):
 
+    def setUp(self):
+        super(LDAFunctionalTest, self).setUp()
+        self.grids = jnp.linspace(-5, 5, 11)
+        self.density = utils.gaussian(
+            self.grids, centre=1., sigma=1.
+        )
 
+    def test_local_density_approximation(self):
+        init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
+            stax.serial(stax.Dense(16), stax.Elu, stax.Dense(1))
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        xc_energy_density = xc_energy_density_fn(self.density, init_params)
 
+        self.assertEqual(init_params[0][0].shape, (1, 16))
+        self.assertEqual(xc_energy_density.shape, (11,))
 
-
-
-
-
-
-
+    def test_local_density_approximation_wrong_output_shape(self):
+        init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
+            stax.serial(stax.Dense(16), stax.Elu, stax.Dense(3))
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        with self.assertRaisesRegex(
+                ValueError,
+                "The output should have shape \(-1, 1\) but got \(11, 3\)"
+        ):
+            xc_energy_density_fn(self.density, init_params)
 
 
 class GlobalFunctionalTest(parameterized.TestCase):
+    
+    def setUp(self):
+        super(GlobalFunctionalTest, self).setUp()
+        self.grids = jnp.linspace(-5, 5, 17)
+        self.density = utils.gaussian(
+            self.grids, centre=1., sigma=1.
+        )
 
     def test_spatial_shift_input(self):
         np.testing.assert_allclose(
@@ -399,5 +425,105 @@ class GlobalFunctionalTest(parameterized.TestCase):
     @parameterized.parameters(0, 3, 6, 9)
     def test_is_power_of_two_false(self, number):
         self.assertFalse(neural_xc._is_power_of_two(number))
+
+    @parameterized.parameters('relu', 'elu', 'softplus', 'swish')
+    def test_global_functional_with_unet(self, activation):
+        init_fn, xc_energy_density_fn = neural_xc.global_functional(
+            neural_xc.build_unet(
+                num_filters_list=[4, 2],
+                core_num_filters=4,
+                activation=activation
+            ),
+            grids=self.grids
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        xc_energy_density = xc_energy_density_fn(self.density, init_params)
+        # i.e. output shape should same as shape of grids
+        self.assertEqual(xc_energy_density.shape, (17,))
+
+    @parameterized.parameters('relu', 'elu', 'softplus', 'swish')
+    def test_global_functional_with_sliding_net(self, activation):
+        init_fn, xc_energy_density_fn = neural_xc.global_functional(
+            neural_xc.build_sliding_net(
+                window_size=3,
+                num_filters_list=[4, 2, 2],
+                activation=activation
+            ),
+            grids=self.grids
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        xc_energy_density = xc_energy_density_fn(self.density, init_params)
+        # i.e. output shape should same as shape of grids
+        self.assertEqual(xc_energy_density.shape, (17,))
+
+    def test_global_functional_wrong_num_spatial_shift(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            'num_spatial_shift must be at least 1, but got 0'
+        ):
+            neural_xc.global_functional(
+                neural_xc.build_unet(
+                    num_filters_list=[4, 2],
+                    core_num_filters=4,
+                    activation='swish'
+                ),
+                grids=self.grids,
+                num_spatial_shift=0
+            )
+
+    def test_global_functional_wrong_num_grids(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "num_grids must be a power of 2 plus 1"
+            " for global functional, but got 6"
+        ):
+            neural_xc.global_functional(
+                neural_xc.build_unet(
+                    num_filters_list=[4, 2],
+                    core_num_filters=4,
+                    activation='softplus'
+                ),
+                grids=jnp.linspace(-1, 1, 6)
+            )
+
+    def test_global_functional_with_unet_wrong_output_shape(self):
+        init_fn, xc_energy_density_fn = neural_xc.global_functional(
+            stax.serial(neural_xc.build_unet(
+                num_filters_list=[4, 2],
+                core_num_filters=4,
+                activation='softplus'
+            ),
+                # [..., N, 1] -> [..., N//2, 1] which is then squeezed to [..., N//2]
+                neural_xc.Conv1D(1, filter_shape=(3,), strides=(2,), padding='VALID')
+            ),
+            grids=self.grids
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        with self.assertRaisesRegex(
+            ValueError,
+            'The output should have shape \(-1, 17\) but got \(1, 8\)'
+        ):
+            xc_energy_density_fn(self.density, init_params)
+
+    def test_global_functional_with_sliding_net_wrong_output_shape(self):
+        init_fn, xc_energy_density_fn = neural_xc.global_functional(
+            stax.serial(
+                neural_xc.build_sliding_net(
+                    window_size=3,
+                    num_filters_list=[4, 2, 2],
+                    activation='softplus'
+                ),
+                # [..., N, 1] -> [..., N//2 + 1, 1] which is then squeezed to [..., N/2 + 1, 1]
+                neural_xc.Conv1D(1, filter_shape=(1,), strides=(2,), padding='VALID')
+            ),
+            grids=self.grids
+        )
+        init_params = init_fn(random.PRNGKey(0))
+        with self.assertRaisesRegex(
+            ValueError,
+            'The output should have shape \(-1, 17\) but got \(1, 9\)'
+        ):
+            xc_energy_density_fn(self.density, init_params)
+
 
 

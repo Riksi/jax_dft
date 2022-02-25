@@ -561,7 +561,7 @@ def build_sliding_net(
 
 def _check_network_output(output, num_features):
     shape = output.shape
-    if shape.ndim != 2 or shape[-1] != num_features:
+    if output.ndim != 2 or shape[1] != num_features:
         raise ValueError(
             f'The output should have shape (-1, {num_features})'
             f' but got {shape}'
@@ -664,7 +664,7 @@ def local_density_approximation(network):
     return init_fn, xc_energy_density_fn
 
 
-def global_functional(network, grids, num_spatial_shift):
+def global_functional(network, grids, num_spatial_shift=1):
     """Functional with global density information parameterised by neural network
 
     Input which comprises the entire density
