@@ -332,46 +332,58 @@ def kohn_sham_iteration(
             grids=state.grids
         )
 
+    # v_H(r) = \int d^3r' w(r, r') n_0(r)
     hartree_potential = get_hartree_potential(
         density=state.density,
         grids=state.grids,
-        interaction_fn=interaction_fn)
+        interaction_fn=interaction_fn
+    )
+
+    # v_xc(r) = δE_xc/δn(r) at n = n_0
     xc_potential = get_xc_potential(
         density=state.density,
         xc_energy_density_function=xc_energy_density_fn,
-        grids=state.grids)
-    ks_potential = hartree_potential + xc_potential + state.external_potential
+        grids=state.grids
+    )
+
+    # v_s(r) = v_H(r) + v_ext(r) + v_xc(r)
+    ks_potential = hartree_potential + state.external_potential + xc_potential
     xc_energy_density = xc_energy_density_fn(state.density)
 
     density, total_eigen_energies, gap = _solve_interacting_system(
         external_potential=ks_potential,
-        num_electrons=state.num_electrons,
+        num_electrons=num_electrons,
         grids=state.grids
     )
 
+    # E[n] = T_s[n] + E_H[n] + E_ext[n] + E_xc[n]
     total_energy = (
-        # KE = total_eigen_energies - external_potential_energy
+        # T_s[n] - KS kinetic energy
+        # T_s[n] = <T_s>
+        # = <H_s> - <V_s>
+        # = (sum of KS eigenstate energies)
+        #     - (external potential energy due to KS potential)
         total_eigen_energies - get_external_potential_energy(
             density=state.density,
             external_potential=ks_potential,
             grids=state.grids
         )
-        # hartree energy
+        # E_H[n] - hartree energy
         + get_hartree_energy(
             density=density,
             interaction_fn=interaction_fn,
             grids=state.grids,
         )
-        # xc energy
-        + get_xc_energy(
-            density=density,
-            xc_energy_density_function=xc_energy_density_fn,
-            grids=state.grids
-        )
-        # external energy
+        # E_ext[n] - external potential energy
         + get_external_potential_energy(
             density=state.density,
             external_potential=state.external_potential,
+            grids=state.grids
+        )
+        # E_xc[n] = exchange correlation energy
+        + get_xc_energy(
+            density=density,
+            xc_energy_density_function=xc_energy_density_fn,
             grids=state.grids
         )
     )

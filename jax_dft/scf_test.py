@@ -261,16 +261,103 @@ class ScfTest(parameterized.TestCase):
         )
 
 
+class KohnShamIterationTest(parameterized.TestCase):
 
+    def setUp(self):
+        super(KohnShamIterationTest, self).setUp()
+        self.grids = jnp.linspace(-5, 5, 101)
+        self.num_electrons = 2
 
+    def _create_initial_testing_state(self, interaction_fn):
+        locations = jnp.array([0.5, 0.5])
+        nuclear_charges = jnp.array([1, 1])
+        return scf.KohnShamState(
+            density=self.num_electrons * utils.gaussian(
+                grids=self.grids, centre=0., sigma=1.
+            ),
+            total_energy=jnp.inf,
+            locations=locations,
+            nuclear_charges=nuclear_charges,
+            grids=self.grids,
+            external_potential=utils.get_atomic_chain_potential(
+                grids=self.grids,
+                locations=locations,
+                nuclear_charges=nuclear_charges,
+                interaction_fn=interaction_fn
+            ),
+            num_electrons=self.num_electrons
+        )
 
+    def _test_state(self, state, initial_state):
+        # Next state density should normalise to num_electrons
+        self.assertAlmostEqual(
+            float(jnp.sum(state.density) * utils.get_dx(self.grids)),
+            self.num_electrons
+        )
+        # Total energy should be finite after one iteration
+        self.assertTrue(jnp.isfinite(state.total_energy))
 
+        # These start out as `None`
+        self.assertLen(state.hartree_potential, len(state.grids))
+        self.assertLen(state.xc_potential, len(state.grids))
 
+        # All these should remain unchanged
+        np.testing.assert_allclose(initial_state.locations, state.locations)
+        np.testing.assert_allclose(initial_state.nuclear_charges, state.nuclear_charges)
+        np.testing.assert_allclose(initial_state.external_potential, state.external_potential)
+        np.testing.assert_allclose(initial_state.grids, state.grids)
+        self.assertEqual(initial_state.num_electrons, state.num_electrons)
+        # gap = lumo - homo >= 0 since lumo >= homo
+        # > 0 if you have an even number of electrons
+        self.assertGreater(state.gap, 0)
 
+    @parameterized.parameters(
+        (utils.soft_coulomb, True),
+        (utils.soft_coulomb, False),
+        (utils.exponential_coulomb, True),
+        (utils.exponential_coulomb, False)
+    )
+    def test_kohn_sham_iteration(self, interaction_fn, enforce_reflection_symmetry):
+        initial_state = self._create_initial_testing_state(interaction_fn)
+        next_state = scf.kohn_sham_iteration(
+            state=initial_state,
+            num_electrons=self.num_electrons,
+            # 3d LDA exchange functional
+            # with 0 correlation contribution
+            xc_energy_density_fn=tree_util.Partial(
+                lambda density: -0.73855 * density ** (1 / 3)
+            ),
+            interaction_fn=interaction_fn,
+            enforce_reflection_symmetry=enforce_reflection_symmetry
+        )
+        self._test_state(next_state, initial_state)
 
-
-
-
+    @parameterized.parameters(
+        (utils.soft_coulomb, True),
+        (utils.soft_coulomb, False),
+        (utils.exponential_coulomb, True),
+        (utils.exponential_coulomb, False)
+    )
+    def test_kohn_sham_iteration_neural_xc(self, interaction_fn, enforce_reflection_symmetry):
+        init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
+            stax.serial(
+                stax.Dense(8), stax.Elu, stax.Dense(1)
+            )
+        )
+        params_init = init_fn(random.PRNGKey(0))
+        initial_state = self._create_initial_testing_state(interaction_fn)
+        next_state = scf.kohn_sham_iteration(
+            state=initial_state,
+            num_electrons=self.num_electrons,
+            # 3d LDA exchange functional
+            # with 0 correlation contribution
+            xc_energy_density_fn=tree_util.Partial(
+                xc_energy_density_fn, params=params_init
+            ),
+            interaction_fn=interaction_fn,
+            enforce_reflection_symmetry=enforce_reflection_symmetry
+        )
+        self._test_state(next_state, initial_state)
 
 
 class GetInitialDensityTest(absltest.TestCase):
@@ -298,6 +385,8 @@ class GetInitialDensityTest(absltest.TestCase):
                 ValueError, "Unknown initialisation method init"
         ):
             scf.get_initial_density(self.states, 'init')
+
+
 
 
 
