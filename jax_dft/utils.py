@@ -211,7 +211,7 @@ def compute_distances_between_nuclei(locations, nuclei_indices):
         raise ValueError(f"locations.ndim is expected to be 2 but got {locations.ndim}")
 
     size = len(nuclei_indices)
-    if locations.ndim != 2:
+    if size != 2:
         raise ValueError(f"size of nuclei_indices is expected to be 2 but got {size}")
 
     return jnp.abs(

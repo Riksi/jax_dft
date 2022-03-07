@@ -189,9 +189,10 @@ def _get_hartree_potential(density, grids, interaction_fn):
     #  ...
     #  [n11 * f(r11 - r2N), ... n1N * f(r1N - r2N)]]
     # numerically integrate for each r1 fixing r2
-    return 0.5 * jnp.sum(
+    return (#0.5 * \
+           jnp.sum(
         n1 * interaction_fn(r1 - r2), axis=1
-    ) * utils.get_dx(grids)
+    ) * utils.get_dx(grids))
 
 
 def get_hartree_potential(density, grids, interaction_fn):
@@ -364,7 +365,7 @@ def kohn_sham_iteration(
         # = (sum of KS eigenstate energies)
         #     - (external potential energy due to KS potential)
         total_eigen_energies - get_external_potential_energy(
-            density=state.density,
+            density=density,
             external_potential=ks_potential,
             grids=state.grids
         )
@@ -376,7 +377,7 @@ def kohn_sham_iteration(
         )
         # E_ext[n] - external potential energy
         + get_external_potential_energy(
-            density=state.density,
+            density=density,
             external_potential=state.external_potential,
             grids=state.grids
         )
@@ -418,7 +419,7 @@ def kohn_sham(
     alpha_decay=0.9,
     enforce_reflection_symmetry=False,
     num_mixing_iterations=2,
-    density_mse_converge_tolerance=1.):
+    density_mse_converge_tolerance=-1.):
     """Runs Kohn-Sham to solve ground state of external potential
 
     Args:
@@ -491,11 +492,9 @@ def kohn_sham(
         if jnp.mean(jnp.square(differences)) < density_mse_converge_tolerance:
             converged = True
 
-        states.append(state)
-
         state = state._replace(converged=converged)
         state = state._replace(
-            density=state.density + alpha *
+            density=old_state.density + alpha *
                 jnp.mean(differences[-num_mixing_iterations:], axis=0)
         )
         states.append(state)

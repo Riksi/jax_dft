@@ -380,9 +380,45 @@ class UtilsTest(parameterized.TestCase):
                     [-2., -1., 3.5, 55.],
                 ]),
                 nuclei_indices=(1, 2)
-            )
-            [[2.5, 3.5, 4.5]]
+            ),
+            [2.5, 3.5, 4.5]
         )
 
+    def test_compute_distances_between_nuclei_wrong_locations_ndim(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                f"locations.ndim is expected to be 2 but got 3"
+        ):
+            np.testing.assert_allclose(
+                utils.compute_distances_between_nuclei(
+                    locations=np.array([
+                        [[-1.], [1.], [3.5], [5.]],
+                        [[-4.], [0.], [3.5], [10.]],
+                        [[-2.], [-1.], [3.5], [55.]],
+                    ]),
+                    nuclei_indices=(1, 2)
+                )
+                [[2.5, 3.5, 4.5]]
+            )
 
+    def test_compute_distances_between_nuclei_wrong_nuclei_indices_size(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                f"size of nuclei_indices is expected to be 2 but got 4"
+        ):
+            np.testing.assert_allclose(
+                utils.compute_distances_between_nuclei(
+                    locations=np.array([
+                        [-1., 1., 3.5, 5.],
+                        [-4., 0., 3.5, 10.],
+                        [-2., -1., 3.5, 55.],
+                    ]),
+                    nuclei_indices=(1, 2, 3, 4)
+                )
+                [[2.5, 3.5, 4.5]]
+            )
+
+
+if __name__ == '__main__':
+    absltest.main()
 

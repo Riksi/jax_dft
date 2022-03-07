@@ -526,4 +526,6 @@ class GlobalFunctionalTest(parameterized.TestCase):
             xc_energy_density_fn(self.density, init_params)
 
 
+if __name__ == '__main__':
+    absltest.main()
 

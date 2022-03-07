@@ -33,6 +33,11 @@ def _get_exact_h_atom_density(displacements, dx, energy=-0.670):
     Returns:
 
     """
+    if displacements.ndim != 2:
+        raise ValueError(
+            f"displacements is expected to have ndim=2, but got {displacements.ndim}"
+        )
+
     v = np.sqrt(-8 * energy / constants.EXPONENTIAL_COULOMB_KAPPA ** 2)
     # [num_nuclei, num_grids]
     z = (2 / constants.EXPONENTIAL_COULOMB_KAPPA) * np.sqrt(

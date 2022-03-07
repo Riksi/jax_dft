@@ -652,7 +652,6 @@ def local_density_approximation(network):
             Float numpy array of shape (num_grids,)
 
         """
-
         # Network is applied to each point of the density on the grid
         # so can think of the input as having batch size of `num_grids`
         # and a single feature per batch element

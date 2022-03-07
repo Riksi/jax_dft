@@ -20,9 +20,9 @@
 - [x] test_flip_and_average_location_not_on_grids
 - [x] test_location_center_at_grids_center_point_true
 - [x] test_location_center_at_grids_center_point_false
-- [ ] test_compute_distances_between_nuclei
-- [ ] test_compute_distances_between_nuclei_wrong_locations_ndim
-- [ ] test_compute_distances_between_nuclei_wrong_nuclei_indices_size
+- [x] test_compute_distances_between_nuclei
+- [x] test_compute_distances_between_nuclei_wrong_locations_ndim
+- [x] test_compute_distances_between_nuclei_wrong_nuclei_indices_size
 
 ## `scf`
 - [x] test_discrete_laplacian
@@ -37,19 +37,19 @@
 - [x] test_get_xc_energy
 - [x] test_get_xc_potential
 - [x] test_get_xc_potential_hartree
-- [ ] test_save_and_load_state
-- [ ] test_kohn_sham_iteration
-- [ ] test_kohn_sham_iteration_neural_xc
-- [ ] test_kohn_sham_iteration_neural_xc_energy_loss_gradient
-- [ ] test_kohn_sham_iteration_neural_xc_density_loss_gradient
-- [ ] test_kohn_sham_iteration_neural_xc_density_loss_gradient_symmetry
-- [ ] test_kohn_sham
-- [ ] test_kohn_sham_convergence
-- [ ] test_kohn_sham_neural_xc
-- [ ] test_kohn_sham_neural_xc_energy_loss_gradient
-- [ ] test_kohn_sham_neural_xc_density_loss_gradient
+- [ ] test_save_and_load_state --- this function is not there
+- [x] test_kohn_sham_iteration
+- [x] test_kohn_sham_iteration_neural_xc
+- [x] test_kohn_sham_iteration_neural_xc_energy_loss_gradient
+- [x] test_kohn_sham_iteration_neural_xc_density_loss_gradient
+- [x] test_kohn_sham_iteration_neural_xc_density_loss_gradient_symmetry
+- [x] test_kohn_sham
+- [x] test_kohn_sham_convergence
+- [x] test_kohn_sham_neural_xc
+- [x] test_kohn_sham_neural_xc_energy_loss_gradient
+- [x] test_kohn_sham_neural_xc_density_loss_gradient
 - [x] test_get_initial_density_exact
-- [ ] test_get_initial_density_noninteracting
+- [x] test_get_initial_density_noninteracting
 - [x] test_get_initial_density_unknown
 
 ## `neural_xc`
@@ -83,7 +83,25 @@
 - [x] test_global_functional_with_sliding_net_wrong_output_shape
 
 ## `np_utils`
-- [ ] test_flatten
-- [ ] test_get_exact_h_atom_density
-- [ ] test_get_exact_h_atom_density_wrong_shape
-- [ ] test_spherical_superposition_density
+- [x] test_flatten
+- [x] test_get_exact_h_atom_density
+- [x] test_get_exact_h_atom_density_wrong_shape
+- [x] test_spherical_superposition_density
+
+## `jit_scf`
+- [x] test_flip_and_average_on_centre
+- [x] test_flip_and_average_on_centre_fn
+- [x] test_connection_weights
+- [ ] test_kohn_sham_iteration_neural_xc
+- [ ] test_kohn_sham_neural_xc_density_mse_converge_tolerance
+- [ ] test_kohn_sham_neural_xc_num_mixing_iterations
+
+## `losses`
+- [ ] test_trajectory_mse_wrong_predict_ndim
+- [ ] test_trajectory_mse_wrong_predict_target_ndim_difference
+- [x] test_density_mse
+- [x] test_energy_mse
+- [x] test_get_discount_coefficients
+- [x] test_trajectory_mse_on_density
+- [x] test_trajectory_mse_on_energy
+
