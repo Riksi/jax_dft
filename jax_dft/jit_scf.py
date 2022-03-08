@@ -239,8 +239,8 @@ def _kohn_sham(
             jnp.square(differences)) < density_mse_converge_tolerance
         state = jax.lax.cond(
             idx <= stop_gradient_step,
-            true_fn=jax.lax.stop_gradient,
-            false_fn=lambda x: x,
+            true_fun=jax.lax.stop_gradient,
+            false_fun=lambda x: x,
             operand=state
         )
         return (idx + 1, state, alpha * alpha_decay, converged, differences), state
@@ -268,6 +268,24 @@ def _kohn_sham(
 
     differences = jnp.zeros((num_iterations, num_grids))
 
+    # Note that scan preserves the structure
+    # so the result is a KohnShamState namedtuple
+    # where the entries have shape [num_iterations, ...]
+    #
+    # The first element corresponds to the initial state
+    # and it would appear that the final state is not in here.
+
+    # carry0, state0 ---> carry1, state1 | states = [state0]
+    # carry1, state1 ---> carry2, state2 | states = [state0, state1]
+    # carry2, state2 ---> carry3, state3 | states = [state0, state1, state2]
+
+    # Do you need to input 1+ the desired number of iterations?
+
+    # I don't suppose it would make a big difference particularly
+    # after convergence but would be needed
+    # if you wanted to return the final state
+    # that is returned by scf.kohn_sham_iteration.
+
     _, states = jax.lax.scan(
         _single_kohn_sham_iteration,
         init=(0, state, alpha, state.converged, differences),
@@ -275,8 +293,6 @@ def _kohn_sham(
     )
 
     return states
-
-
 
 
 def kohn_sham(

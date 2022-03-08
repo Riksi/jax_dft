@@ -499,6 +499,7 @@ class KohnShamIterationTest(parameterized.TestCase):
             ), params_grad, atol=1e-3
         )
 
+
 class KohnShamTest(parameterized.TestCase):
 
     def setUp(self):
@@ -508,7 +509,7 @@ class KohnShamTest(parameterized.TestCase):
         self.locations = jnp.array([-0.5, 0.5])
         self.nuclear_charges = jnp.array([1, 1])
 
-    def create_testing_external_potential(self, interaction_fn):
+    def _create_testing_external_potential(self, interaction_fn):
         return utils.get_atomic_chain_potential(
             grids=self.grids,
             locations=self.locations,
@@ -563,7 +564,7 @@ class KohnShamTest(parameterized.TestCase):
         for single_state in scf.state_iterator(state):
             self._test_state(
                 single_state,
-                self.create_testing_external_potential(interaction_fn)
+                self._create_testing_external_potential(interaction_fn)
             )
 
 
@@ -583,7 +584,7 @@ class KohnShamTest(parameterized.TestCase):
         for single_state in scf.state_iterator(state):
             self._test_state(
                     single_state,
-                    self.create_testing_external_potential(interaction_fn)
+                    self._create_testing_external_potential(interaction_fn)
             )
 
     @parameterized.parameters(

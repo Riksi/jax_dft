@@ -110,42 +110,16 @@ class KohnShamIterationTest(parameterized.TestCase):
         # > 0 if you have an even number of electrons
         self.assertGreater(state.gap, 0)
 
-    @parameterized.parameters(
-        (utils.soft_coulomb, True),
-        (utils.soft_coulomb, False),
-        (utils.exponential_coulomb, True),
-        (utils.exponential_coulomb, False)
-    )
-    def test_kohn_sham_iteration(self, interaction_fn, enforce_reflection_symmetry):
-        initial_state = self._create_testing_initial_state(interaction_fn)
-        next_state = scf.kohn_sham_iteration(
-            state=initial_state,
-            num_electrons=self.num_electrons,
-            # 3d LDA exchange functional
-            # with 0 correlation contribution
-            xc_energy_density_fn=tree_util.Partial(
-                lambda density: -0.73855 * density ** (1 / 3)
-            ),
-            interaction_fn=interaction_fn,
-            enforce_reflection_symmetry=enforce_reflection_symmetry
-        )
-        self._test_state(next_state, initial_state)
-
-    @parameterized.parameters(
-        (utils.soft_coulomb, True),
-        (utils.soft_coulomb, False),
-        (utils.exponential_coulomb, True),
-        (utils.exponential_coulomb, False)
-    )
-    def test_kohn_sham_iteration_neural_xc(self, interaction_fn, enforce_reflection_symmetry):
+    @parameterized.parameters(True, False)
+    def test_kohn_sham_iteration_neural_xc(self, enforce_reflection_symmetry):
         init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
             stax.serial(
                 stax.Dense(8), stax.Elu, stax.Dense(1)
             )
         )
         params_init = init_fn(random.PRNGKey(0))
-        initial_state = self._create_testing_initial_state(interaction_fn)
-        next_state = scf.kohn_sham_iteration(
+        initial_state = self._create_testing_initial_state(utils.exponential_coulomb)
+        next_state = jit_scf.kohn_sham_iteration(
             state=initial_state,
             num_electrons=self.num_electrons,
             # 3d LDA exchange functional
@@ -153,147 +127,133 @@ class KohnShamIterationTest(parameterized.TestCase):
             xc_energy_density_fn=tree_util.Partial(
                 xc_energy_density_fn, params=params_init
             ),
-            interaction_fn=interaction_fn,
+            interaction_fn=utils.exponential_coulomb,
             enforce_reflection_symmetry=enforce_reflection_symmetry
         )
         self._test_state(next_state, initial_state)
 
-    def test_kohn_sham_iteration_neural_xc_energy_loss_gradient(self):
-        # The network only has one layer.
-        # The initial params contains weights with shape (1, 1) and bias (1,).
-        init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
-            stax.serial(stax.Dense(1)))
-        init_params = init_fn(rng=random.PRNGKey(0))
-        initial_state = self._create_testing_initial_state(
-            utils.exponential_coulomb)
-        target_energy = 2.
-        spec, flatten_init_params = np_utils.flatten(init_params)
 
-        def loss(flatten_params, initial_state, target_energy):
-            state = scf.kohn_sham_iteration(
-                state=initial_state,
-                num_electrons=self.num_electrons,
-                xc_energy_density_fn=tree_util.Partial(
-                    xc_energy_density_fn,
-                    params=np_utils.unflatten(spec, flatten_params)),
-                interaction_fn=utils.exponential_coulomb,
-                enforce_reflection_symmetry=True)
-            return (state.total_energy - target_energy) ** 2
+class KohnShamTest(parameterized.TestCase):
 
-        grad_fn = jax.grad(loss)
+    def setUp(self):
+        super(KohnShamTest, self).setUp()
+        self.grids = jnp.linspace(-5, 5, 101)
+        self.num_electrons = 2
+        self.locations = jnp.array([-0.5, 0.5])
+        self.nuclear_charges = jnp.array([1, 1])
 
-        params_grad = grad_fn(
-            flatten_init_params,
-            initial_state=initial_state,
-            target_energy=target_energy)
-
-        np.testing.assert_allclose(params_grad, [-8.54995173, -14.75419501])
-        # np.testing.assert_allclose(params_grad, [-8.549952, -14.754195])
-
-        # Check whether the gradient values match the numerical gradient.
-        np.testing.assert_allclose(
-            optimize.approx_fprime(
-                xk=flatten_init_params,
-                f=functools.partial(
-                    loss,
-                    initial_state=initial_state,
-                    target_energy=target_energy
-                ), epsilon=1e-9
-            ), params_grad, atol=2e-3
+    def _create_testing_external_potential(self, interaction_fn):
+        return utils.get_atomic_chain_potential(
+            grids=self.grids,
+            locations=self.locations,
+            nuclear_charges=self.nuclear_charges,
+            interaction_fn=interaction_fn
         )
 
-    def test_kohn_sham_iteration_neural_xc_density_loss_gradient(self):
-        # The network only has one layer.
-        # The initial params contains weights with shape (1, 1) and bias (1,).
+    def _test_state(self, state, external_potential):
+        # The density in  the final state should normalise
+        # to the number of electrons
+        self.assertAlmostEqual(
+            float(jnp.sum(state.density) * utils.get_dx(self.grids)),
+            self.num_electrons
+        )
+        # Total energy should be finite after one iteration
+        self.assertTrue(jnp.isfinite(state.total_energy))
+
+        # These start out as `None`
+        self.assertLen(state.hartree_potential, len(state.grids))
+        self.assertLen(state.xc_potential, len(state.grids))
+
+        # All these should remain unchanged
+        np.testing.assert_allclose(state.locations, self.locations)
+        np.testing.assert_allclose(state.nuclear_charges, self.nuclear_charges)
+        np.testing.assert_allclose(external_potential, state.external_potential)
+        np.testing.assert_allclose(state.grids, self.grids)
+        self.assertEqual(state.num_electrons, self.num_electrons)
+        # gap = lumo - homo >= 0 since lumo >= homo
+        # > 0 if you have an even number of electrons
+        self.assertGreater(state.gap, 0)
+
+    @parameterized.parameters(
+        (jnp.inf, [False, True, True]),
+        (-1., [False, False, False])
+    )
+    def test_kohn_sham_neural_xc_density_mse_converge_tolerance(self, density_mse_converge_tolerance, expected_converged):
+        # See notes in jit_scf._kohn_sham_iteration as to why here first element is False
+        # in the first case whilst all were true for scf.kohn_sham
+        # (Basically the first element of the result
+        # is the initial state with converged=False)
         init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
-            stax.serial(stax.Dense(1)))
-        init_params = init_fn(rng=random.PRNGKey(0))
-        initial_state = self._create_testing_initial_state(
-            utils.exponential_coulomb)
-        target_density = (
-                utils.gaussian(grids=self.grids, centre=-0.5, sigma=1.)
-                + utils.gaussian(grids=self.grids, centre=0.5, sigma=1.))
-        spec, flatten_init_params = np_utils.flatten(init_params)
-
-        def loss(flatten_params, initial_state, target_density):
-            state = scf.kohn_sham_iteration(
-                state=initial_state,
-                num_electrons=self.num_electrons,
-                xc_energy_density_fn=tree_util.Partial(
-                    xc_energy_density_fn,
-                    params=np_utils.unflatten(spec, flatten_params)),
-                interaction_fn=utils.exponential_coulomb,
-                enforce_reflection_symmetry=False)
-            return jnp.sum(jnp.abs(state.density - target_density)) * utils.get_dx(
-                self.grids)
-
-        grad_fn = jax.grad(loss)
-
-        params_grad = grad_fn(
-            flatten_init_params,
-            initial_state=initial_state,
-            target_density=target_density)
-
-        # Check gradient values.
-        np.testing.assert_allclose(params_grad, [-1.3413697, 0.], atol=5e-7)
-        # np.testing.assert_allclose(params_grad, [-1.34137017, 0.], atol=5e-7)
-
-        # Check whether the gradient values match the numerical gradient.
-        np.testing.assert_allclose(
-            optimize.approx_fprime(
-                xk=flatten_init_params,
-                f=functools.partial(
-                    loss,
-                    initial_state=initial_state,
-                    target_density=target_density
-                ), epsilon=1e-9
-            ), params_grad, atol=2e-4
+            stax.serial(
+                stax.Dense(8), stax.Elu, stax.Dense(1)
+            )
+        )
+        params_init = init_fn(random.PRNGKey(0))
+        state = jit_scf.kohn_sham(
+            locations=self.locations,
+            nuclear_charges=self.nuclear_charges,
+            num_electrons=self.num_electrons,
+            num_iterations=3,
+            grids=self.grids,
+            # 3d LDA exchange functional, zero correlation functional
+            xc_energy_density_fn=tree_util.Partial(xc_energy_density_fn,
+                                                   params=params_init),
+            interaction_fn=utils.exponential_coulomb,
+            # Note that we have to provide an initial value for density for jit
+            # whereas in the other version there was the option of initialising
+            # it within kohn_sham
+            initial_density=self.num_electrons * utils.gaussian(
+                self.grids, centre=0., sigma=0.5
+            ),
+            density_mse_converge_tolerance=density_mse_converge_tolerance
+        )
+        np.testing.assert_array_equal(
+            state.converged, expected_converged
         )
 
-    def test_kohn_sham_iteration_neural_xc_density_loss_gradient_symmetry(self):
-        # The network only has one layer.
-        # The initial params contains weights with shape (1, 1) and bias (1,).
+        for single_state in scf.state_iterator(state):
+            self._test_state(
+                single_state,
+                self._create_testing_external_potential(utils.exponential_coulomb)
+            )
+
+
+    @parameterized.parameters(2, 3, 4, 5)
+    def test_kohn_sham_neural_xc_num_mixing_iterations(self, num_mixing_iterations):
+        # See notes in jit_scf._kohn_sham_iteration as to why here first element is False
+        # in the first case whilst all were true for scf.kohn_sham
+        # (Basically the first element of the resul
+        # is the initial state with converged=False)
         init_fn, xc_energy_density_fn = neural_xc.local_density_approximation(
-            stax.serial(stax.Dense(1)))
-        init_params = init_fn(rng=random.PRNGKey(0))
-        initial_state = self._create_testing_initial_state(
-            utils.exponential_coulomb)
-        target_density = (
-                utils.gaussian(grids=self.grids, centre=-0.5, sigma=1.)
-                + utils.gaussian(grids=self.grids, centre=0.5, sigma=1.))
-        spec, flatten_init_params = np_utils.flatten(init_params)
-
-        def loss(flatten_params, initial_state, target_density):
-            state = scf.kohn_sham_iteration(
-                state=initial_state,
-                num_electrons=self.num_electrons,
-                xc_energy_density_fn=tree_util.Partial(
-                    xc_energy_density_fn,
-                    params=np_utils.unflatten(spec, flatten_params)),
-                interaction_fn=utils.exponential_coulomb,
-                enforce_reflection_symmetry=True)
-            return jnp.sum(jnp.abs(state.density - target_density)) * utils.get_dx(
-                self.grids)
-
-        grad_fn = jax.grad(loss)
-
-        params_grad = grad_fn(
-            flatten_init_params,
-            initial_state=initial_state,
-            target_density=target_density)
-
-        # Check gradient values.
-        np.testing.assert_allclose(params_grad, [-1.3413697, 0.], atol=5e-7)
-        # np.testing.assert_allclose(params_grad, [-1.34137017, 0.], atol=5e-7)
-
-        # Check whether the gradient values match the numerical gradient.
-        np.testing.assert_allclose(
-            optimize.approx_fprime(
-                xk=flatten_init_params,
-                f=functools.partial(
-                    loss,
-                    initial_state=initial_state,
-                    target_density=target_density
-                ), epsilon=1e-9
-            ), params_grad, atol=1e-3
+            stax.serial(
+                stax.Dense(8), stax.Elu, stax.Dense(1)
+            )
         )
+        params_init = init_fn(random.PRNGKey(0))
+        state = jit_scf.kohn_sham(
+            locations=self.locations,
+            nuclear_charges=self.nuclear_charges,
+            num_electrons=self.num_electrons,
+            num_iterations=3,
+            grids=self.grids,
+            # 3d LDA exchange functional, zero correlation functional
+            xc_energy_density_fn=tree_util.Partial(xc_energy_density_fn,
+                                                   params=params_init),
+            interaction_fn=utils.exponential_coulomb,
+            # Note that we have to provide an initial value for density for jit
+            # whereas in the other version there was the option of initialising
+            # it within kohn_sham
+            initial_density=self.num_electrons * utils.gaussian(
+                self.grids, centre=0., sigma=0.5
+            ),
+            num_mixing_iterations=num_mixing_iterations
+        )
+        for single_state in scf.state_iterator(state):
+            self._test_state(
+                single_state,
+                self._create_testing_external_potential(utils.exponential_coulomb)
+            )
+
+
+if __name__ == '__main__':
+    absltest.main()
