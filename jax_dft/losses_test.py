@@ -13,11 +13,37 @@ config.update('jax_enable_x64', True)
 
 
 class LossesTest(absltest.TestCase):
+
+    def test_trajectory_mse_wrong_predict_ndim(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            'predict should have ndim >= 2 got 1'
+        ):
+            losses.trajectory_mse(
+                target=jnp.array([[0.2, 0.2, 0.2, 0.2], [0.6, 0.6, 0.6, 0.6]]),
+                predict=jnp.array([0.6, 0.6, 0.6, 0.6]),
+                discount=1.
+            )
+
+    def test_trajectory_mse_wrong_predict_target_ndim_difference(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            ('predict should have ndim that is greater than target ndim by 1'
+             ' got predict.ndim=2, target.ndim=2')
+        ):
+            losses.trajectory_mse(
+                target=jnp.array([[0.2, 0.2, 0.2, 0.2], [0.6, 0.6, 0.6, 0.6]]),
+                predict=jnp.array([[0.2, 0.2, 0.2, 0.2], [0.6, 0.6, 0.6, 0.6]]),
+                discount=1.
+            )
+
     def test_density_mse(self):
         self.assertAlmostEqual(
             float(losses.mean_square_error(
-                target=jnp.array([[0.2, 0.2, 0.2, 0.2], [0.6, 0.6, 0.6, 0.6]]),
-                predict=jnp.array([[0.4, 0.5, 0.2, 0.3], [0.6, 0.6, 0.6, 0.6]])
+                target=jnp.array([[0.2, 0.2, 0.2, 0.2],
+                                  [0.6, 0.6, 0.6, 0.6]]),
+                predict=jnp.array([[0.4, 0.5, 0.2, 0.3],
+                                   [0.6, 0.6, 0.6, 0.6]])
             )),
             # (0.2**2 + 0.3**2 + 0.1**2) / 8
             0.0175
@@ -84,4 +110,7 @@ class LossesTest(absltest.TestCase):
             0.02
         )
 
+
+if __name__ == '__main__':
+    absltest.main()
 

@@ -92,13 +92,13 @@
 - [x] test_flip_and_average_on_centre
 - [x] test_flip_and_average_on_centre_fn
 - [x] test_connection_weights
-- [ ] test_kohn_sham_iteration_neural_xc
-- [ ] test_kohn_sham_neural_xc_density_mse_converge_tolerance
-- [ ] test_kohn_sham_neural_xc_num_mixing_iterations
+- [x] test_kohn_sham_iteration_neural_xc
+- [x] test_kohn_sham_neural_xc_density_mse_converge_tolerance
+- [x] test_kohn_sham_neural_xc_num_mixing_iterations
 
 ## `losses`
-- [ ] test_trajectory_mse_wrong_predict_ndim
-- [ ] test_trajectory_mse_wrong_predict_target_ndim_difference
+- [x] test_trajectory_mse_wrong_predict_ndim
+- [x] test_trajectory_mse_wrong_predict_target_ndim_difference
 - [x] test_density_mse
 - [x] test_energy_mse
 - [x] test_get_discount_coefficients
