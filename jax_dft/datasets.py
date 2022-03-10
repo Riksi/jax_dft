@@ -61,6 +61,7 @@ class Dataset(object):
             data['densities'] = np.load(f)
         with file_open(os.path.join(path, 'external_potentials.npy'), 'rb') as f:
             data['external_potentials'] = np.load(f)
+        return data
 
     def _set_num_grids(self, num_grids):
         original_num_grids = getattr(self, 'num_grids', None)
