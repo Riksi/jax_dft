@@ -96,8 +96,8 @@ class Dataset(object):
             mask = np.ones(len(self.distances_x100))
         else:
             selected_distance_x100 = set(selected_distance_x100)
-            mask = np.array([distance in self.distances_x100
-                    for distance in selected_distance_x100])
+            mask = np.array([distance in selected_distance_x100
+                    for distance in self.distances_x100])
             if len(selected_distance_x100) != np.sum(mask):
                 raise ValueError("selected_distances_x100 contains distance "
                                  "that is not in the dataset")
